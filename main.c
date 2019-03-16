@@ -200,15 +200,15 @@ void serialListener(void)
 	if(USART_Available())
 	{
 		inputBuffer = USART_Get();
-		
-		if(inputBuffer != 'A' || inputBuffer != 'B')
+		/*
+		if(inputBuffer != 'A' && inputBuffer != 'B')
 		{
-			lcd_gotoxy(0, 1);
-			sprintf(buffer, "Atualizando... ");
-			lcd_puts(buffer);
-			
-		}
+			lcd_gotoxy(6, 1);
+			sprintf(buffer, "freq: %u",inputBuffer); 
+			lcd_data(inputBuffer);
 
+		}
+		*/
 		switch(inputBuffer)
 		{
 			case 'A':
@@ -233,10 +233,7 @@ void serialListener(void)
 
 		
 		}
-		lcd_clrscr();
-		lcd_gotoxy(0, 0);
-		lcd_puts_p(PSTR("sPWM Generator"));
-		sei();
+	
 		
 	}
 	
@@ -287,9 +284,10 @@ int main(void)
 	lcd_init(LCD_DISP_ON);
 	lcd_clrscr();
 	lcd_puts_p(PSTR("sPWM Generator"));
+	/*
 	lcd_gotoxy(0, 1);
-	lcd_puts_p(PSTR("ADC: "));
-	
+	lcd_puts_p(PSTR("Freq: "));
+	*/
 
 	init_pwm1C();  // inicia pwm
 
