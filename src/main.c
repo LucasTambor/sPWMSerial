@@ -11,16 +11,19 @@
 #include "lcd_usb.h"
 #include "defines.h"
 #include <math.h>
+#include "USART.h"
 
 //************************************************************************
 
 #define F_OSC	8000000
 #define PWM_F_OSC	10000
-#define SIN_F_OSC	60
-#define LUT_SIZE	(PWM_F_OSC/SIN_F_OSC) //
 #define MAX_ADC_VALUE	1023
 
 //************************************************************************
+
+
+volatile uint16_t Lut_Size = 166;
+uint16_t Freq_Osc_Sin = 60;
 
 uint16_t adcValue = 0;
 double adcNorm = 0;
@@ -29,11 +32,16 @@ uint16_t ICR1_value = 0;
 uint16_t LUT_size = 0;
 
 volatile uint8_t idx = 0;
-double lookUpTable[LUT_SIZE];
-int16_t OCR1C_Table[LUT_SIZE];
+double lookUpTable[255];
+
+
+int16_t OCR1C_Table[255];
+
+volatile uint16_t timerCounter = 0;
 
 
 //************************************************************************
+
 uint16_t calculate_sin_values()
 {	
 	double sinVal = 0;
@@ -41,9 +49,9 @@ uint16_t calculate_sin_values()
 	ICR1_value = (uint16_t) F_OSC/PWM_F_OSC;
 
 
-	for(uint16_t i = 0; i<LUT_SIZE; i++)
+	for(uint16_t i = 0; i<Lut_Size; i++)
 	{
-		sinVal = sin(i*2*M_PI/LUT_SIZE);
+		sinVal = sin(i*2*M_PI/Lut_Size);
 		lookUpTable[i] = sinVal;
 		
 	}
@@ -51,6 +59,25 @@ uint16_t calculate_sin_values()
 	return ICR1_value;
 	
 }
+
+void setFreq(uint8_t freq)
+{
+	cli();
+
+	double sinVal = 0;
+
+	Lut_Size = PWM_F_OSC / freq;
+	
+	for(uint16_t i = 0; i<Lut_Size; i++)
+	{
+		sinVal = sin(i*2*M_PI/Lut_Size);
+		lookUpTable[i] = sinVal;
+		
+	}
+
+	sei();
+}
+
 
 void Adc_init(void){
 
@@ -70,8 +97,6 @@ ISR(ADC_vect)
 {
 	adcValue = ADC;
 
-	
-
 	//new reading 
 	ADCSRA|= (1<<ADSC);
 
@@ -84,8 +109,8 @@ void Timer0_init(void) // Aciona contador externo
 
 	TCNT0 = 0;
 	TCCR0A =0;
-	TCCR0B = (1<< CS02)| (1<< CS01)|(1<< CS00); /// subida em T0 === D2 === PD7
-	//TIMSK1 = (1<<TOIE1);
+	TCCR0B = (1<< CS02)| (0<< CS01)|(0<< CS00); /// subida em T0 === D2 === PD7
+	TIMSK0 = (1<<TOIE0);
 }
 
 
@@ -109,7 +134,7 @@ ISR(TIMER1_OVF_vect)
 
 	idx++;
 
-	if(idx == LUT_SIZE)
+	if(idx == Lut_Size)
 	{
 	 	idx = 0;
 	}
@@ -119,8 +144,8 @@ ISR(TIMER1_OVF_vect)
 // Interrupção Timer 0
 ISR(TIMER0_OVF_vect)
 {
-
 	
+	timerCounter++;
 
 }
 
@@ -154,20 +179,98 @@ void initIO(void)
 }
 
 
-void updateLCD(void)
-{
-	char buffer[10];
 
-	sprintf(buffer, "%d ", adcValue);
-	lcd_gotoxy(5, 1);
-	lcd_puts(buffer);
-}
+
+
+
 
 void updateOCR(void)
 {
 	OCR1C_Table[idx] = (int16_t)((lookUpTable[idx]*200*adcValue)/MAX_ADC_VALUE) + 200;
 
 }
+
+
+void serialListener(void)
+{
+	uint8_t inputBuffer = 0;
+	char buffer[10];
+	
+
+	if(USART_Available())
+	{
+		inputBuffer = USART_Get();
+		/*
+		if(inputBuffer != 'A' && inputBuffer != 'B')
+		{
+			lcd_gotoxy(6, 1);
+			sprintf(buffer, "freq: %u",inputBuffer); 
+			lcd_data(inputBuffer);
+
+		}
+		*/
+		switch(inputBuffer)
+		{
+			case 'A':
+				Liga_Feed();
+			break;
+			case 'B':
+				Desliga_Feed();
+			break;
+		
+			case 50:
+				setFreq(50);
+			break;
+			case 60:
+				setFreq(60);
+			break;
+			case 80:
+				setFreq(80);
+			break;
+			default:
+				setFreq(inputBuffer);
+			break;
+
+		
+		}
+	
+		
+	}
+	
+}
+
+void btnListener(void)
+{
+	if(Ch_busy_lig)
+	{
+		USART_Send(65);
+	}
+
+	if(Ch_ack_lig)
+	{
+		USART_Send(66);
+
+	}
+	
+
+		
+	if(timerCounter >= 120)
+	{
+		uint8_t adcVolt = (uint8_t) (adcValue * 5 /1023);
+		
+		Toggle_Init();
+		timerCounter = 0;
+		
+				
+
+		USART_Send(adcVolt);
+	}
+	
+
+}
+
+
+
 int main(void)
 {
 	
@@ -181,13 +284,18 @@ int main(void)
 	lcd_init(LCD_DISP_ON);
 	lcd_clrscr();
 	lcd_puts_p(PSTR("sPWM Generator"));
+	/*
 	lcd_gotoxy(0, 1);
-	lcd_puts_p(PSTR("ADC: "));
-	
-
+	lcd_puts_p(PSTR("Freq: "));
+	*/
 
 	init_pwm1C();  // inicia pwm
-	calculate_sin_values();  // define valor
+
+	setFreq(60);  // define valor
+
+
+	USART_init(9600);
+		
 
 
 	sei(); // interrupcao geral
@@ -198,7 +306,11 @@ int main(void)
     {
 		updateOCR();
 
-		updateLCD(); 
+		//updateLCD(); 
+
+		serialListener();
+
+		btnListener();
     }
 }
 
