@@ -1,2 +1,2 @@
-# AVR8sPWM
-sPWM generator using AVR 32u4
+# sPWMSerial
+sPWM generator using AVR 32u4 with adjustable frequency through serial.
